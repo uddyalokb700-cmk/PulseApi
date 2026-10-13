@@ -1,0 +1,152 @@
+{% extends 'base.html' %}
+
+{% block page_title %}
+  <i class="bi bi-gear text-info"></i> Notification Settings & Telemetry Policies
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+  <!-- Notification Channels Config -->
+  <div class="col-lg-7">
+    <div class="panel-card">
+      <div class="panel-header border-bottom pb-3 mb-4 border-secondary">
+        <div>
+          <h5 class="panel-title">
+            <i class="bi bi-broadcast text-info"></i> Notification Channels
+          </h5>
+          <p class="text-muted small mb-0">Configure Email and Webhook alerts for outages and latency violations</p>
+        </div>
+      </div>
+
+      <!-- Add New Channel Form -->
+      <form method="post" action="{% url 'settings_view' %}" class="mb-4 p-3 rounded" style="background: rgba(11,17,32,0.8); border: 1px solid var(--border-glass);">
+        {% csrf_token %}
+        <h6 class="text-white small fw-bold mb-3">Add Alert Channel</h6>
+        
+        <div class="row g-3 mb-3">
+          <div class="col-md-4">
+            <label class="pulse-label">Channel Type</label>
+            <select name="channel" class="form-select pulse-input form-select-sm">
+              <option value="email">Email</option>
+              <option value="webhook">Webhook (POST)</option>
+            </select>
+          </div>
+          <div class="col-md-8">
+            <label class="pulse-label">Recipient / Target URL *</label>
+            <input type="text" name="target" class="form-control pulse-input form-control-sm font-mono" required placeholder="ops@example.com or https://hooks.slack.com/...">
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="pulse-label">Secret Token (Optional Authorization Bearer)</label>
+          <input type="password" name="secret_token" class="form-control pulse-input form-control-sm font-mono" placeholder="Optional webhook token">
+        </div>
+
+        <div class="d-flex flex-wrap gap-3 mb-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="notify_on_failure" id="n_fail" checked>
+            <label class="form-check-label small text-muted" for="n_fail">Downtime & Failures</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="notify_on_latency" id="n_lat" checked>
+            <label class="form-check-label small text-muted" for="n_lat">Latency Violations</label>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="notify_on_recovery" id="n_rec" checked>
+            <label class="form-check-label small text-muted" for="n_rec">Recovery Events</label>
+          </div>
+        </div>
+
+        <div class="text-end">
+          <button type="submit" class="btn btn-pulse-cyan btn-sm">
+            <i class="bi bi-plus-lg me-1"></i> Register Channel
+          </button>
+        </div>
+      </form>
+
+      <!-- Active Channels List -->
+      <h6 class="text-white small fw-bold mb-3">Configured Channels</h6>
+      {% if configs %}
+      <div class="table-responsive">
+        <table class="pulse-table">
+          <thead>
+            <tr>
+              <th>Channel</th>
+              <th>Destination</th>
+              <th>Triggers</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for cfg in configs %}
+            <tr>
+              <td>
+                <span class="badge {% if cfg.channel == 'email' %}bg-primary{% else %}bg-purple{% endif %} font-mono" style="font-size: 0.7rem;">
+                  {{ cfg.channel|upper }}
+                </span>
+              </td>
+              <td class="font-mono small text-white text-truncate" style="max-width: 200px;">
+                {{ cfg.target }}
+              </td>
+              <td class="small text-muted">
+                {% if cfg.notify_on_failure %}<span class="badge bg-secondary me-1">Failures</span>{% endif %}
+                {% if cfg.notify_on_latency %}<span class="badge bg-secondary me-1">Latency</span>{% endif %}
+                {% if cfg.notify_on_recovery %}<span class="badge bg-secondary">Recovery</span>{% endif %}
+              </td>
+              <td class="text-end">
+                <form method="post" action="{% url 'notification_delete_web' cfg.id %}" class="d-inline">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove Channel">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="text-muted small py-3 mb-0 text-center">No notification channels registered. Alerts will only appear in the dashboard.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Telemetry & Security Engine Info -->
+  <div class="col-lg-5">
+    <div class="panel-card mb-4">
+      <div class="panel-header">
+        <h5 class="panel-title">
+          <i class="bi bi-shield-check text-info"></i> Security & SSRF Engine
+        </h5>
+      </div>
+      <div class="small text-muted">
+        <p>PulseAPI enforces kernel-grade outbound HTTP destination filtering:</p>
+        <ul class="ps-3 mb-3">
+          <li><strong>Schemes:</strong> HTTP & HTTPS only</li>
+          <li><strong>Credential Blocking:</strong> Embedded username/password in URLs prohibited</li>
+          <li><strong>IP Blocking:</strong> Loopback (127.0.0.0/8), RFC1918 Private (10/8, 172.16/12, 192.168/16), Link-Local (169.254/16), Multicast, and Cloud Metadata (169.254.169.254) strictly denied</li>
+          <li><strong>Redirect Guard:</strong> Bounded 3xx redirects re-resolved and re-validated before following</li>
+          <li><strong>Response Ceiling:</strong> 2MB payload ceiling to eliminate memory exhaustion attacks</li>
+        </ul>
+        <span class="badge bg-success-subtle text-success border border-success">SSRF Engine Active</span>
+      </div>
+    </div>
+
+    <div class="panel-card mb-0">
+      <div class="panel-header">
+        <h5 class="panel-title">
+          <i class="bi bi-archive text-info"></i> Data Retention Policy
+        </h5>
+      </div>
+      <div class="small text-muted">
+        <p>Historical check results and latency metrics are maintained according to policy:</p>
+        <div class="p-3 rounded mb-2 font-mono small" style="background: rgba(11,17,32,0.8);">
+          CHECK_RETENTION_DAYS = 30
+        </div>
+        <p class="mb-0">The automated Celery Beat maintenance task sweeps expired records daily to preserve sub-millisecond query performance.</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

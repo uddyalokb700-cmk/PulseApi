@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+
+{% block page_title %}
+  <i class="bi bi-bell text-info"></i> Incidents & Alert Events
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+  <div>
+    <h4 class="text-white fw-bold mb-1">Alert Incidents</h4>
+    <p class="text-muted small mb-0">Threshold violations, downtime alerts, and automatic recovery events</p>
+  </div>
+  <div class="btn-group btn-group-sm" role="group">
+    <a href="{% url 'alerts_list' %}" class="btn btn-pulse-outline {% if not current_state %}active{% endif %}">All</a>
+    <a href="?state=active" class="btn btn-pulse-outline {% if current_state == 'active' %}active{% endif %}">
+      Active ({{ active_count }})
+    </a>
+    <a href="?state=resolved" class="btn btn-pulse-outline {% if current_state == 'resolved' %}active{% endif %}">Resolved</a>
+  </div>
+</div>
+
+<div class="panel-card">
+  {% if alerts %}
+  <div class="table-responsive">
+    <table class="pulse-table">
+      <thead>
+        <tr>
+          <th>Severity</th>
+          <th>State</th>
+          <th>Monitor</th>
+          <th>Alert Type</th>
+          <th>Description</th>
+          <th>Triggered</th>
+          <th>Resolved</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in alerts %}
+        <tr>
+          <td>
+            <span class="badge {% if a.severity == 'critical' %}bg-danger{% elif a.severity == 'warning' %}bg-warning text-dark{% else %}bg-info text-dark{% endif %}" style="font-size: 0.72rem;">
+              {{ a.severity|upper }}
+            </span>
+          </td>
+          <td>
+            <span class="badge {% if a.state == 'active' %}bg-danger{% else %}bg-success{% endif %}" style="font-size: 0.72rem;">
+              {{ a.state|upper }}
+            </span>
+          </td>
+          <td>
+            <a href="{% url 'monitor_detail' a.monitor.id %}" class="text-white fw-bold text-decoration-none">
+              {{ a.monitor.name }}
+            </a>
+          </td>
+          <td class="font-mono small">
+            {{ a.get_alert_type_display }}
+          </td>
+          <td class="small text-muted" style="max-width: 320px;">
+            {{ a.description }}
+            {% if a.consecutive_count > 1 %}
+              <span class="badge bg-dark border border-secondary font-mono ms-1" style="font-size: 0.65rem;">&times;{{ a.consecutive_count }}</span>
+            {% endif %}
+          </td>
+          <td class="font-mono small text-muted">
+            {{ a.triggered_at|date:"M d, H:i:s" }}
+          </td>
+          <td class="font-mono small text-muted">
+            {% if a.resolved_at %}
+              <span class="text-success">{{ a.resolved_at|date:"M d, H:i:s" }}</span>
+            {% else %}
+              <span class="text-danger">&bull; Active</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if a.state == 'active' %}
+            <form method="post" action="{% url 'alert_resolve_web' a.id %}" class="d-inline">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-sm btn-pulse-outline" title="Resolve Alert">
+                <i class="bi bi-check-lg"></i> Resolve
+              </button>
+            </form>
+            {% else %}
+            <span class="text-muted small"><i class="bi bi-check2-all text-success"></i></span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center py-5">
+    <i class="bi bi-check-circle fs-1 text-success d-block mb-3"></i>
+    <h6 class="text-white">No alerts recorded</h6>
+    <p class="text-muted small mb-0">All monitored endpoints are within latency SLAs and reporting healthy statuses.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

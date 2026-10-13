@@ -1,0 +1,132 @@
+{% extends 'base.html' %}
+
+{% block page_title %}
+  <i class="bi bi-clock-history text-info"></i> Health Check Execution Logs
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+  <div>
+    <h4 class="text-white fw-bold mb-1">Telemetry Probe Records</h4>
+    <p class="text-muted small mb-0">Audit log of all scheduled and manual HTTP health check requests</p>
+  </div>
+</div>
+
+<!-- Filters Toolbar -->
+<div class="panel-card mb-4 py-3">
+  <form method="get" class="row g-2 align-items-center">
+    <div class="col-md-5">
+      <select name="monitor" class="form-select pulse-input form-select-sm">
+        <option value="">All Monitored Endpoints</option>
+        {% for m in monitors %}
+          <option value="{{ m.id }}" {% if selected_monitor == m.id|stringformat:"s" %}selected{% endif %}>{{ m.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-5">
+      <select name="outcome" class="form-select pulse-input form-select-sm">
+        <option value="">All Outcomes</option>
+        <option value="success" {% if selected_outcome == 'success' %}selected{% endif %}>Success</option>
+        <option value="failure" {% if selected_outcome == 'failure' %}selected{% endif %}>Failure (Status Mismatch / Connect Error)</option>
+        <option value="timeout" {% if selected_outcome == 'timeout' %}selected{% endif %}>Timeout</option>
+        <option value="error" {% if selected_outcome == 'error' %}selected{% endif %}>Error (SSRF / Exception)</option>
+      </select>
+    </div>
+    <div class="col-md-2 text-end">
+      <button type="submit" class="btn btn-sm btn-pulse-cyan w-100">Apply Filter</button>
+    </div>
+  </form>
+</div>
+
+<!-- Logs Table -->
+<div class="panel-card">
+  {% if page_obj.object_list %}
+  <div class="table-responsive">
+    <table class="pulse-table">
+      <thead>
+        <tr>
+          <th>Outcome</th>
+          <th>Monitor</th>
+          <th>Status Code</th>
+          <th>Latency</th>
+          <th>Size</th>
+          <th>Destination IP</th>
+          <th>Error Classification</th>
+          <th>Timestamp</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in page_obj %}
+        <tr>
+          <td>
+            <span class="badge {% if c.outcome == 'success' %}bg-success{% elif c.outcome == 'timeout' %}bg-warning text-dark{% else %}bg-danger{% endif %}" style="font-size: 0.72rem;">
+              {{ c.outcome|upper }}
+            </span>
+          </td>
+          <td>
+            <a href="{% url 'monitor_detail' c.monitor.id %}" class="text-white fw-bold text-decoration-none">
+              {{ c.monitor.name }}
+            </a>
+          </td>
+          <td class="font-mono small">
+            {% if c.http_status_code %}
+              <span class="{% if c.http_status_code < 400 %}text-success{% else %}text-danger{% endif %}">
+                HTTP {{ c.http_status_code }}
+              </span>
+            {% else %}
+              <span class="text-muted">None</span>
+            {% endif %}
+          </td>
+          <td class="font-mono">
+            {{ c.response_time_ms }} ms
+          </td>
+          <td class="font-mono small text-muted">
+            {% if c.response_size_bytes %}{{ c.response_size_bytes }} B{% else %}--{% endif %}
+          </td>
+          <td class="font-mono small text-muted">
+            {{ c.resolved_ip|default:"--" }}
+          </td>
+          <td class="small font-mono text-muted">
+            {% if c.error_category %}
+              <span class="text-danger">{{ c.error_category }}</span>
+              {% if c.error_detail %}
+                <div class="text-dark small text-truncate" style="max-width: 220px;" title="{{ c.error_detail }}">
+                  {{ c.error_detail }}
+                </div>
+              {% endif %}
+            {% else %}
+              <span class="text-success"><i class="bi bi-check-circle me-1"></i>OK</span>
+            {% endif %}
+          </td>
+          <td class="font-mono small text-muted">
+            {{ c.created_at|date:"M d, H:i:s" }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination Controls -->
+  {% if page_obj.has_other_pages %}
+  <div class="d-flex justify-content-between align-items-center mt-4 pt-3 border-top border-secondary">
+    <div class="small text-muted font-mono">
+      Showing records {{ page_obj.start_index }}-{{ page_obj.end_index }} of {{ page_obj.paginator.count }}
+    </div>
+    <div class="btn-group btn-group-sm">
+      {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}{% if selected_monitor %}&monitor={{ selected_monitor }}{% endif %}{% if selected_outcome %}&outcome={{ selected_outcome }}{% endif %}" class="btn btn-pulse-outline">Previous</a>
+      {% endif %}
+      <span class="btn btn-pulse-outline disabled">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{% if selected_monitor %}&monitor={{ selected_monitor }}{% endif %}{% if selected_outcome %}&outcome={{ selected_outcome }}{% endif %}" class="btn btn-pulse-outline">Next</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% else %}
+  <p class="text-center text-muted py-5 mb-0">No health check logs found for this filter criteria.</p>
+  {% endif %}
+</div>
+{% endblock %}

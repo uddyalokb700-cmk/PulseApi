@@ -1,0 +1,140 @@
+{% extends 'base.html' %}
+
+{% block page_title %}
+  <i class="bi bi-hdd-network text-info"></i> API Monitors Fleet
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+  <div>
+    <h4 class="text-white fw-bold mb-1">Monitored Endpoints</h4>
+    <p class="text-muted small mb-0">Configure, inspect, and toggle active HTTP health monitoring targets</p>
+  </div>
+  <a href="{% url 'monitor_create' %}" class="btn btn-pulse-cyan btn-sm">
+    <i class="bi bi-plus-lg me-1"></i> Register New Endpoint
+  </a>
+</div>
+
+<!-- Filters & Search Toolbar -->
+<div class="panel-card mb-4 py-3">
+  <form method="get" class="row g-2 align-items-center">
+    <div class="col-md-5">
+      <div class="input-group input-group-sm">
+        <span class="input-group-text bg-dark border-secondary text-muted"><i class="bi bi-search"></i></span>
+        <input type="text" name="q" class="form-control pulse-input" placeholder="Search by endpoint name or URL..." value="{{ search_query|default:'' }}">
+      </div>
+    </div>
+    <div class="col-md-5">
+      <div class="btn-group btn-group-sm w-100" role="group">
+        <a href="?{% if search_query %}q={{ search_query }}{% endif %}" class="btn btn-pulse-outline {% if not current_status %}active{% endif %}">All</a>
+        <a href="?status=healthy{% if search_query %}&q={{ search_query }}{% endif %}" class="btn btn-pulse-outline {% if current_status == 'healthy' %}active{% endif %}">Healthy</a>
+        <a href="?status=degraded{% if search_query %}&q={{ search_query }}{% endif %}" class="btn btn-pulse-outline {% if current_status == 'degraded' %}active{% endif %}">Degraded</a>
+        <a href="?status=failing{% if search_query %}&q={{ search_query }}{% endif %}" class="btn btn-pulse-outline {% if current_status == 'failing' %}active{% endif %}">Failing</a>
+        <a href="?status=disabled{% if search_query %}&q={{ search_query }}{% endif %}" class="btn btn-pulse-outline {% if current_status == 'disabled' %}active{% endif %}">Paused</a>
+      </div>
+    </div>
+    <div class="col-md-2 text-end">
+      <button type="submit" class="btn btn-sm btn-pulse-cyan w-100">Filter</button>
+    </div>
+  </form>
+</div>
+
+<!-- Monitors List Table -->
+<div class="panel-card">
+  {% if monitors %}
+  <div class="table-responsive">
+    <table class="pulse-table">
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Endpoint Name</th>
+          <th>Target URL</th>
+          <th>Interval</th>
+          <th>Latency</th>
+          <th>Last Response</th>
+          <th>Last Checked</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in monitors %}
+        <tr>
+          <td>
+            {% if not m.enabled %}
+              <span class="badge-status pending">
+                <span class="pulse-dot pending"></span> PAUSED
+              </span>
+            {% else %}
+              <span class="badge-status {{ m.last_status }}">
+                <span class="pulse-dot {{ m.last_status }}"></span>
+                {{ m.last_status }}
+              </span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{% url 'monitor_detail' m.id %}" class="text-white fw-bold text-decoration-none">
+              {{ m.name }}
+            </a>
+          </td>
+          <td>
+            <span class="badge bg-secondary font-mono me-1" style="font-size: 0.68rem;">{{ m.http_method }}</span>
+            <span class="font-mono text-muted small text-truncate d-inline-block" style="max-width: 260px;" title="{{ m.target_url }}">
+              {{ m.target_url }}
+            </span>
+          </td>
+          <td class="font-mono small text-muted">{{ m.check_interval }}s</td>
+          <td class="font-mono">
+            {% if m.last_response_time_ms %}
+              <span class="{% if m.last_response_time_ms >= m.latency_failure_threshold %}text-danger{% elif m.last_response_time_ms >= m.latency_warning_threshold %}text-warning{% else %}text-light{% endif %}">
+                {{ m.last_response_time_ms }} ms
+              </span>
+            {% else %}
+              <span class="text-muted">--</span>
+            {% endif %}
+          </td>
+          <td class="font-mono small">
+            {% if m.last_status_code %}
+              <span class="badge {% if m.last_status_code < 400 %}bg-success{% else %}bg-danger{% endif %}" style="font-size: 0.68rem;">
+                HTTP {{ m.last_status_code }}
+              </span>
+            {% else %}
+              <span class="text-muted">--</span>
+            {% endif %}
+          </td>
+          <td class="font-mono small text-muted">
+            {% if m.last_checked_at %}
+              {{ m.last_checked_at|date:"M d, H:i:s" }}
+            {% else %}
+              Pending
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <div class="d-inline-flex gap-1">
+              <button class="btn btn-sm btn-pulse-outline" onclick="triggerManualCheck({{ m.id }}, this)" title="Execute Probe Now">
+                <i class="bi bi-play-fill"></i>
+              </button>
+              <button class="btn btn-sm btn-pulse-outline" onclick="toggleMonitor({{ m.id }}, this)" title="{% if m.enabled %}Pause Monitor{% else %}Enable Monitor{% endif %}">
+                <i class="bi {% if m.enabled %}bi-pause-fill{% else %}bi-arrow-clockwise{% endif %}"></i>
+              </button>
+              <a href="{% url 'monitor_detail' m.id %}" class="btn btn-sm btn-pulse-outline" title="View Telemetry">
+                <i class="bi bi-bar-chart"></i>
+              </a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="text-center py-5">
+    <div class="text-muted mb-3 fs-1"><i class="bi bi-search"></i></div>
+    <h6 class="text-white">No monitors found</h6>
+    <p class="text-muted small mb-3">No endpoints match your current filter or search criteria.</p>
+    <a href="{% url 'monitor_create' %}" class="btn btn-pulse-cyan btn-sm">
+      <i class="bi bi-plus-lg me-1"></i> Register New Endpoint
+    </a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

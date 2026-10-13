@@ -1,0 +1,256 @@
+{% extends 'base.html' %}
+
+{% block page_title %}
+  <i class="bi bi-speedometer2 text-info"></i> PulseAPI Observability Overview
+{% endblock %}
+
+{% block content %}
+<!-- Time Range Filter & Actions Bar -->
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+  <div>
+    <h4 class="text-white fw-bold mb-1">Fleet Telemetry</h4>
+    <p class="text-muted small mb-0">Live aggregated reliability and response-time metrics across all monitored endpoints</p>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <div class="btn-group" role="group" id="time-range-group">
+      <button type="button" class="btn btn-sm btn-pulse-outline time-btn" data-range="1h">1h</button>
+      <button type="button" class="btn btn-sm btn-pulse-outline active time-btn" data-range="24h">24h</button>
+      <button type="button" class="btn btn-sm btn-pulse-outline time-btn" data-range="7d">7d</button>
+      <button type="button" class="btn btn-sm btn-pulse-outline time-btn" data-range="30d">30d</button>
+    </div>
+    <button class="btn btn-sm btn-pulse-outline" onclick="loadDashboardAnalytics('24h')">
+      <i class="bi bi-arrow-repeat"></i>
+    </button>
+  </div>
+</div>
+
+<!-- Primary KPI Metrics Grid -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="metric-card">
+      <div class="metric-title">Monitors Configured</div>
+      <div class="metric-value font-mono">{{ total_monitors }}</div>
+      <div class="metric-subtitle">{{ enabled_monitors }} active &bull; {{ total_monitors|add:"-"|add:enabled_monitors }} paused</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="metric-card">
+      <div class="metric-title">Healthy Fleet</div>
+      <div class="metric-value font-mono text-success">{{ healthy_monitors }}</div>
+      <div class="metric-subtitle">
+        <span class="text-warning">{{ degraded_monitors }} degraded</span> &bull; 
+        <span class="text-danger">{{ failing_monitors }} failing</span>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="metric-card">
+      <div class="metric-title">Success Rate</div>
+      <div class="metric-value font-mono" id="metric-success-rate">--%</div>
+      <div class="metric-subtitle" id="metric-error-rate">--% error rate</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="metric-card">
+      <div class="metric-title">Response Latency (p95)</div>
+      <div class="metric-value font-mono text-info" id="metric-p95">-- ms</div>
+      <div class="metric-subtitle" id="metric-avg-latency">Avg: -- ms &bull; p50: -- ms</div>
+    </div>
+  </div>
+</div>
+
+<!-- Visualizations Row -->
+<div class="row g-4 mb-4">
+  <div class="col-lg-8">
+    <div class="panel-card h-100 mb-0">
+      <div class="panel-header">
+        <h5 class="panel-title">
+          <i class="bi bi-graph-up text-info"></i> Latency Over Time (ms)
+        </h5>
+        <span class="badge font-mono" style="background: rgba(0,242,254,0.1); color: var(--cyan-primary);">Monotonic Clock</span>
+      </div>
+      <div style="height: 270px; position: relative;">
+        <canvas id="overview-timeseries-chart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="panel-card h-100 mb-0">
+      <div class="panel-header">
+        <h5 class="panel-title">
+          <i class="bi bi-pie-chart text-info"></i> Status Distribution
+        </h5>
+      </div>
+      <div style="height: 270px; position: relative;">
+        <canvas id="overview-distribution-chart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Active Endpoints Table & Recent Alerts Row -->
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="panel-card mb-0">
+      <div class="panel-header">
+        <h5 class="panel-title">
+          <i class="bi bi-hdd-network text-info"></i> Monitored Endpoints
+        </h5>
+        <a href="{% url 'monitors_list' %}" class="small text-info text-decoration-none">View All &rarr;</a>
+      </div>
+
+      {% if monitors %}
+      <div class="table-responsive">
+        <table class="pulse-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Endpoint Name</th>
+              <th>Method & Host</th>
+              <th>Latency</th>
+              <th>Last Checked</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for m in monitors %}
+            <tr>
+              <td>
+                <span class="badge-status {{ m.last_status }}">
+                  <span class="pulse-dot {{ m.last_status }}"></span>
+                  {{ m.last_status }}
+                </span>
+              </td>
+              <td>
+                <a href="{% url 'monitor_detail' m.id %}" class="text-white fw-semibold text-decoration-none hover-cyan">
+                  {{ m.name }}
+                </a>
+              </td>
+              <td>
+                <span class="badge bg-secondary font-mono me-1" style="font-size: 0.7rem;">{{ m.http_method }}</span>
+                <span class="font-mono text-muted small">{{ m.hostname }}</span>
+              </td>
+              <td class="font-mono">
+                {% if m.last_response_time_ms %}
+                  <span class="{% if m.last_response_time_ms >= m.latency_failure_threshold %}text-danger{% elif m.last_response_time_ms >= m.latency_warning_threshold %}text-warning{% else %}text-light{% endif %}">
+                    {{ m.last_response_time_ms }} ms
+                  </span>
+                {% else %}
+                  <span class="text-muted">--</span>
+                {% endif %}
+              </td>
+              <td class="small text-muted font-mono">
+                {% if m.last_checked_at %}
+                  {{ m.last_checked_at|date:"H:i:s" }}
+                {% else %}
+                  Pending
+                {% endif %}
+              </td>
+              <td class="text-end">
+                <button class="btn btn-sm btn-pulse-outline" onclick="triggerManualCheck({{ m.id }}, this)" title="Run Health Check Now">
+                  <i class="bi bi-play-fill"></i> Check
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="text-center py-5">
+        <div class="text-muted mb-3 fs-1"><i class="bi bi-hdd-network"></i></div>
+        <h6 class="text-white">No endpoints registered yet</h6>
+        <p class="text-muted small mb-3">Begin monitoring your APIs by registering your first HTTP endpoint.</p>
+        <a href="{% url 'monitor_create' %}" class="btn btn-pulse-cyan btn-sm">
+          <i class="bi bi-plus-lg me-1"></i> Add First Monitor
+        </a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Recent Alerts & Incidents -->
+  <div class="col-lg-4">
+    <div class="panel-card mb-0">
+      <div class="panel-header">
+        <h5 class="panel-title">
+          <i class="bi bi-bell text-info"></i> Recent Alert Events
+        </h5>
+        <a href="{% url 'alerts_list' %}" class="small text-info text-decoration-none">View All &rarr;</a>
+      </div>
+
+      {% if recent_alerts %}
+      <div class="d-flex flex-column gap-3">
+        {% for alert in recent_alerts %}
+        <div class="p-3 rounded" style="background: rgba(11,17,32,0.8); border-left: 3px solid {% if alert.severity == 'critical' %}var(--color-failing){% elif alert.severity == 'warning' %}var(--color-degraded){% else %}var(--color-healthy){% endif %};">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="fw-semibold small text-white">{{ alert.monitor.name }}</span>
+            <span class="badge {% if alert.state == 'active' %}bg-danger{% else %}bg-secondary{% endif %}" style="font-size: 0.65rem;">
+              {{ alert.state|upper }}
+            </span>
+          </div>
+          <p class="small text-muted mb-1" style="font-size: 0.78rem;">{{ alert.description }}</p>
+          <span class="font-mono text-dark small" style="font-size: 0.68rem;">{{ alert.triggered_at|date:"M d, H:i:s" }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="text-center py-4 text-muted">
+        <i class="bi bi-shield-check fs-2 text-success d-block mb-2"></i>
+        <span class="small">No active alerts. All systems operational.</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+let currentRange = '24h';
+
+async function loadDashboardAnalytics(range = '24h') {
+  currentRange = range;
+  
+  // Highlight active button
+  document.querySelectorAll('.time-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.range === range);
+  });
+
+  try {
+    // 1. Fetch summary metrics
+    const sumRes = await fetch(`/api/v1/analytics/summary/?range=${range}`);
+    const summary = await sumRes.json();
+    
+    document.getElementById('metric-success-rate').innerText = `${summary.success_rate}%`;
+    document.getElementById('metric-error-rate').innerText = `${summary.error_rate}% error rate (${summary.total_checks} checks)`;
+    document.getElementById('metric-p95').innerText = `${summary.p95_latency_ms} ms`;
+    document.getElementById('metric-avg-latency').innerText = `Avg: ${summary.avg_latency_ms} ms • p50: ${summary.p50_latency_ms} ms`;
+
+    // 2. Fetch timeseries points
+    const tsRes = await fetch(`/api/v1/analytics/timeseries/?range=${range}`);
+    const tsData = await tsRes.json();
+    renderLatencyTimeseriesChart('overview-timeseries-chart', tsData.points || []);
+
+    // 3. Fetch status distribution
+    const distRes = await fetch(`/api/v1/analytics/status-distribution/?range=${range}`);
+    const distData = await distRes.json();
+    renderStatusDistributionChart('overview-distribution-chart', distData);
+
+  } catch (err) {
+    console.error("Error loading analytics:", err);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadDashboardAnalytics('24h');
+  
+  document.querySelectorAll('.time-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      loadDashboardAnalytics(btn.dataset.range);
+    });
+  });
+});
+</script>
+{% endblock %}

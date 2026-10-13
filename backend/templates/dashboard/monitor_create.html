@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+
+{% block page_title %}
+  <i class="bi bi-plus-circle text-info"></i> Register API Endpoint
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-9">
+    <div class="panel-card">
+      <div class="panel-header border-bottom pb-3 mb-4 border-secondary">
+        <div>
+          <h4 class="text-white fw-bold mb-1">New Endpoint Configuration</h4>
+          <p class="text-muted small mb-0">Define target destination, latency SLA thresholds, expected status, and probe frequency</p>
+        </div>
+      </div>
+
+      <form method="post" action="{% url 'monitor_create' %}">
+        {% csrf_token %}
+
+        <div class="row g-3 mb-4">
+          <div class="col-md-6">
+            <label class="pulse-label">Friendly Name *</label>
+            <input type="text" name="name" class="form-control pulse-input" required placeholder="e.g. Production Payment Gateway" value="{{ post.name|default:'' }}">
+            <div class="text-muted small mt-1" style="font-size: 0.75rem;">Descriptive service or service route identifier</div>
+          </div>
+
+          <div class="col-md-6">
+            <label class="pulse-label">HTTP Method *</label>
+            <select name="http_method" class="form-select pulse-input">
+              <option value="GET" selected>GET</option>
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="PATCH">PATCH</option>
+              <option value="DELETE">DELETE</option>
+              <option value="HEAD">HEAD</option>
+              <option value="OPTIONS">OPTIONS</option>
+            </select>
+          </div>
+
+          <div class="col-12">
+            <label class="pulse-label">Target URL *</label>
+            <input type="url" name="target_url" class="form-control pulse-input font-mono" required placeholder="https://api.example.com/v1/health" value="{{ post.target_url|default:'' }}">
+            <div class="text-muted small mt-1" style="font-size: 0.75rem;">
+              <i class="bi bi-shield-lock text-info"></i> Only HTTP/HTTPS destinations are permitted. Private, loopback, and metadata destinations are blocked by SSRF defense.
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+          <div class="col-md-4">
+            <label class="pulse-label">Check Interval (Seconds)</label>
+            <input type="number" name="check_interval" class="form-control pulse-input font-mono" value="{{ post.check_interval|default:'60' }}" min="10" max="86400">
+            <div class="text-muted small mt-1" style="font-size: 0.75rem;">Frequency of automated background probes</div>
+          </div>
+
+          <div class="col-md-4">
+            <label class="pulse-label">Request Timeout (Seconds)</label>
+            <input type="number" name="request_timeout" class="form-control pulse-input font-mono" value="{{ post.request_timeout|default:'10' }}" min="1" max="60">
+            <div class="text-muted small mt-1" style="font-size: 0.75rem;">Max socket / read wait time before timeout error</div>
+          </div>
+
+          <div class="col-md-4">
+            <label class="pulse-label">Expected Status Codes</label>
+            <input type="text" name="expected_status_codes" class="form-control pulse-input font-mono" value="{{ post.expected_status_codes|default:'200-299' }}" placeholder="200, 201 or 200-299">
+            <div class="text-muted small mt-1" style="font-size: 0.75rem;">Statuses outside range trigger failure alerts</div>
+          </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+          <div class="col-md-6">
+            <label class="pulse-label">Latency Warning Threshold (ms)</label>
+            <input type="number" name="latency_warning_threshold" class="form-control pulse-input font-mono" value="{{ post.latency_warning_threshold|default:'500' }}" min="10">
+            <div class="text-muted small mt-1" style="font-size: 0.75rem;">Marks endpoint as DEGRADED when response exceeds this limit</div>
+          </div>
+
+          <div class="col-md-6">
+            <label class="pulse-label">Latency Failure Threshold (ms)</label>
+            <input type="number" name="latency_failure_threshold" class="form-control pulse-input font-mono" value="{{ post.latency_failure_threshold|default:'2000' }}" min="50">
+            <div class="text-muted small mt-1" style="font-size: 0.75rem;">Triggers critical latency SLA violation alert</div>
+          </div>
+        </div>
+
+        <!-- Optional Request Body -->
+        <div class="mb-4">
+          <label class="pulse-label">Payload Body (Optional for POST/PUT)</label>
+          <textarea name="request_body" class="form-control pulse-input font-mono" rows="3" placeholder='{"status": "ping"}'>{{ post.request_body|default:'' }}</textarea>
+        </div>
+
+        <!-- Custom Request Headers -->
+        <div class="mb-4">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <label class="pulse-label mb-0">Custom Request Headers</label>
+            <button type="button" class="btn btn-sm btn-pulse-outline" onclick="addHeaderRow()">
+              <i class="bi bi-plus-lg me-1"></i> Add Header
+            </button>
+          </div>
+          <div id="custom-headers-container">
+            <!-- Dynamic rows appended via JS -->
+          </div>
+        </div>
+
+        <div class="d-flex justify-content-end gap-2 pt-3 border-top border-secondary">
+          <a href="{% url 'monitors_list' %}" class="btn btn-pulse-outline">Cancel</a>
+          <button type="submit" class="btn btn-pulse-cyan">
+            <i class="bi bi-check-lg me-1"></i> Save & Test Immediately
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

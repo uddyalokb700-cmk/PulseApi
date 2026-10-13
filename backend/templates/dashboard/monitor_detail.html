@@ -1,0 +1,237 @@
+{% extends 'base.html' %}
+
+{% block page_title %}
+  <i class="bi bi-activity text-info"></i> Monitor Telemetry: {{ monitor.name }}
+{% endblock %}
+
+{% block content %}
+<!-- Monitor Header Bar -->
+<div class="panel-card mb-4">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+    <div>
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <span class="badge-status {{ monitor.last_status }}">
+          <span class="pulse-dot {{ monitor.last_status }}"></span>
+          {{ monitor.last_status }}
+        </span>
+        <h4 class="text-white fw-bold mb-0">{{ monitor.name }}</h4>
+      </div>
+      <div class="d-flex align-items-center gap-2 font-mono small text-muted">
+        <span class="badge bg-secondary font-mono">{{ monitor.http_method }}</span>
+        <a href="{{ monitor.target_url }}" target="_blank" rel="noopener noreferrer" class="text-info text-decoration-none">
+          {{ monitor.target_url }} <i class="bi bi-box-arrow-up-right" style="font-size: 0.75rem;"></i>
+        </a>
+      </div>
+    </div>
+
+    <div class="d-flex align-items-center gap-2">
+      <button class="btn btn-pulse-cyan btn-sm" onclick="triggerManualCheck({{ monitor.id }}, this)">
+        <i class="bi bi-play-fill me-1"></i> Run Probe Now
+      </button>
+      <button class="btn btn-pulse-outline btn-sm" onclick="toggleMonitor({{ monitor.id }}, this)">
+        <i class="bi {% if monitor.enabled %}bi-pause-fill{% else %}bi-play{% endif %} me-1"></i>
+        {% if monitor.enabled %}Pause{% else %}Resume{% endif %}
+      </button>
+      <form method="post" action="{% url 'monitor_delete' monitor.id %}" onsubmit="return confirm('Delete this monitor and its telemetry history permanently?');" class="d-inline">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete Monitor">
+          <i class="bi bi-trash"></i>
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Key Telemetry Metrics -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="metric-card">
+      <div class="metric-title">Latest Latency</div>
+      <div class="metric-value font-mono">
+        {% if monitor.last_response_time_ms %}
+          <span class="{% if monitor.last_response_time_ms >= monitor.latency_failure_threshold %}text-danger{% elif monitor.last_response_time_ms >= monitor.latency_warning_threshold %}text-warning{% else %}text-light{% endif %}">
+            {{ monitor.last_response_time_ms }} ms
+          </span>
+        {% else %}
+          --
+        {% endif %}
+      </div>
+      <div class="metric-subtitle">
+        Warning &gt; {{ monitor.latency_warning_threshold }}ms &bull; Failure &gt; {{ monitor.latency_failure_threshold }}ms
+      </div>
+    </div>
+  </div>
+
+  <div class="col-6 col-md-3">
+    <div class="metric-card">
+      <div class="metric-title">Latest Status Code</div>
+      <div class="metric-value font-mono text-info">
+        {% if monitor.last_status_code %}HTTP {{ monitor.last_status_code }}{% else %}N/A{% endif %}
+      </div>
+      <div class="metric-subtitle">Expected: {{ monitor.expected_status_codes }}</div>
+    </div>
+  </div>
+
+  <div class="col-6 col-md-3">
+    <div class="metric-card">
+      <div class="metric-title">Consecutive Failures</div>
+      <div class="metric-value font-mono {% if monitor.consecutive_failures > 0 %}text-danger{% else %}text-success{% endif %}">
+        {{ monitor.consecutive_failures }}
+      </div>
+      <div class="metric-subtitle">{% if monitor.consecutive_failures == 0 %}Fully Healthy{% else %}Degraded State{% endif %}</div>
+    </div>
+  </div>
+
+  <div class="col-6 col-md-3">
+    <div class="metric-card">
+      <div class="metric-title">Schedule & Timeout</div>
+      <div class="metric-value font-mono" style="font-size: 1.45rem;">
+        {{ monitor.check_interval }}s / {{ monitor.request_timeout }}s
+      </div>
+      <div class="metric-subtitle">Interval / Request Timeout</div>
+    </div>
+  </div>
+</div>
+
+<!-- Latency Trend Visualization -->
+<div class="panel-card mb-4">
+  <div class="panel-header">
+    <h5 class="panel-title">
+      <i class="bi bi-graph-up text-info"></i> Latency History (Monotonic ms)
+    </h5>
+    <div class="btn-group btn-group-sm" role="group">
+      <button type="button" class="btn btn-pulse-outline time-btn" data-range="1h">1h</button>
+      <button type="button" class="btn btn-pulse-outline active time-btn" data-range="24h">24h</button>
+      <button type="button" class="btn btn-pulse-outline time-btn" data-range="7d">7d</button>
+      <button type="button" class="btn btn-pulse-outline time-btn" data-range="30d">30d</button>
+    </div>
+  </div>
+  <div style="height: 280px; position: relative;">
+    <canvas id="monitor-latency-chart"></canvas>
+  </div>
+</div>
+
+<!-- Check Logs & Alerts Split -->
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="panel-card mb-0">
+      <div class="panel-header">
+        <h5 class="panel-title">
+          <i class="bi bi-clock-history text-info"></i> Recent Health Check Probes
+        </h5>
+      </div>
+
+      {% if checks %}
+      <div class="table-responsive">
+        <table class="pulse-table">
+          <thead>
+            <tr>
+              <th>Outcome</th>
+              <th>Status</th>
+              <th>Latency</th>
+              <th>Response Size</th>
+              <th>Resolved IP</th>
+              <th>Checked At</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in checks %}
+            <tr>
+              <td>
+                <span class="badge {% if c.outcome == 'success' %}bg-success{% elif c.outcome == 'timeout' %}bg-warning text-dark{% else %}bg-danger{% endif %}" style="font-size: 0.72rem;">
+                  {{ c.outcome|upper }}
+                </span>
+                {% if c.error_category %}
+                  <div class="small text-danger font-mono" style="font-size: 0.68rem;">{{ c.error_category }}</div>
+                {% endif %}
+              </td>
+              <td class="font-mono small">
+                {% if c.http_status_code %}
+                  HTTP {{ c.http_status_code }}
+                {% else %}
+                  --
+                {% endif %}
+              </td>
+              <td class="font-mono">
+                {{ c.response_time_ms }} ms
+              </td>
+              <td class="font-mono small text-muted">
+                {% if c.response_size_bytes %}{{ c.response_size_bytes }} B{% else %}--{% endif %}
+              </td>
+              <td class="font-mono small text-muted">
+                {{ c.resolved_ip|default:"--" }}
+              </td>
+              <td class="font-mono small text-muted">
+                {{ c.created_at|date:"M d, H:i:s" }}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="text-muted small py-4 text-center">No checks logged yet. Click "Run Probe Now" above to trigger initial measurement.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="panel-card mb-0">
+      <div class="panel-header">
+        <h5 class="panel-title">
+          <i class="bi bi-bell text-info"></i> Active / Past Alerts
+        </h5>
+      </div>
+
+      {% if alerts %}
+      <div class="d-flex flex-column gap-3">
+        {% for a in alerts %}
+        <div class="p-3 rounded" style="background: rgba(11,17,32,0.8); border-left: 3px solid {% if a.severity == 'critical' %}var(--color-failing){% elif a.severity == 'warning' %}var(--color-degraded){% else %}var(--color-healthy){% endif %};">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="fw-semibold small text-white">{{ a.get_alert_type_display }}</span>
+            <span class="badge {% if a.state == 'active' %}bg-danger{% else %}bg-secondary{% endif %}" style="font-size: 0.65rem;">
+              {{ a.state|upper }}
+            </span>
+          </div>
+          <p class="small text-muted mb-1" style="font-size: 0.78rem;">{{ a.description }}</p>
+          <span class="font-mono text-dark small" style="font-size: 0.68rem;">{{ a.triggered_at|date:"M d, H:i:s" }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-muted small py-4 text-center">No alerts triggered for this endpoint.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+async function loadMonitorTelemetry(range = '24h') {
+  document.querySelectorAll('.time-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.range === range);
+  });
+
+  try {
+    const res = await fetch(`/api/v1/analytics/timeseries/?monitor={{ monitor.id }}&range=${range}`);
+    const data = await res.json();
+    renderLatencyTimeseriesChart(
+      'monitor-latency-chart',
+      data.points || [],
+      {{ monitor.latency_warning_threshold }},
+      {{ monitor.latency_failure_threshold }}
+    );
+  } catch (err) {
+    console.error("Failed to load monitor telemetry:", err);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadMonitorTelemetry('24h');
+  document.querySelectorAll('.time-btn').forEach(btn => {
+    btn.addEventListener('click', () => loadMonitorTelemetry(btn.dataset.range));
+  });
+});
+</script>
+{% endblock %}

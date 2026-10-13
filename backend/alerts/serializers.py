@@ -25,3 +25,23 @@ class NotificationConfigSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'secret_token': {'write_only': True}
         }
+
+    def validate(self, attrs):
+        channel = attrs.get('channel', getattr(self.instance, 'channel', None))
+        target = attrs.get('target', getattr(self.instance, 'target', None))
+
+        if channel == NotificationConfig.CHANNEL_WEBHOOK and target:
+            from checks.ssrf import validate_url_syntax, SSRFSecurityError
+            try:
+                validate_url_syntax(target)
+            except SSRFSecurityError as e:
+                raise serializers.ValidationError({'target': str(e)})
+        elif channel == NotificationConfig.CHANNEL_EMAIL and target:
+            from django.core.validators import validate_email
+            from django.core.exceptions import ValidationError
+            try:
+                validate_email(target)
+            except ValidationError:
+                raise serializers.ValidationError({'target': 'Enter a valid email address.'})
+
+        return attrs

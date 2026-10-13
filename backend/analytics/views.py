@@ -11,6 +11,7 @@ from analytics.services import (
 
 
 class PerformanceSummaryAPIView(APIView):
+    serializer_class = None
     permission_classes = [permissions.IsAuthenticated]
 
     @extend_schema(
@@ -28,6 +29,7 @@ class PerformanceSummaryAPIView(APIView):
 
 
 class TimeseriesLatencyAPIView(APIView):
+    serializer_class = None
     permission_classes = [permissions.IsAuthenticated]
 
     @extend_schema(
@@ -45,6 +47,7 @@ class TimeseriesLatencyAPIView(APIView):
 
 
 class StatusDistributionAPIView(APIView):
+    serializer_class = None
     permission_classes = [permissions.IsAuthenticated]
 
     @extend_schema(
@@ -62,6 +65,7 @@ class StatusDistributionAPIView(APIView):
 
 
 class EndpointComparisonAPIView(APIView):
+    serializer_class = None
     permission_classes = [permissions.IsAuthenticated]
 
     @extend_schema(
@@ -77,6 +81,7 @@ class EndpointComparisonAPIView(APIView):
 
 
 class SystemHealthAPIView(APIView):
+    serializer_class = None
     permission_classes = [permissions.AllowAny]
 
     @extend_schema(

@@ -46,9 +46,11 @@ class MonitorDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
 
 
 class MonitorToggleAPIView(APIView):
+    serializer_class = MonitorSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     @extend_schema(
+        request=None,
         responses={200: MonitorSerializer},
         summary="Toggle monitor enabled/disabled status"
     )
@@ -64,9 +66,11 @@ class MonitorToggleAPIView(APIView):
 
 
 class MonitorManualCheckAPIView(APIView):
+    serializer_class = None
     permission_classes = [permissions.IsAuthenticated]
 
     @extend_schema(
+        request=None,
         summary="Trigger immediate authorized manual health check",
         description="Executes a synchronous, bounded health check on the specified monitor and updates its telemetry."
     )
@@ -75,6 +79,15 @@ class MonitorManualCheckAPIView(APIView):
             monitor = Monitor.objects.get(pk=pk, owner=request.user)
         except Monitor.DoesNotExist:
             raise Http404("Monitor not found or unauthorized.")
+
+        # Rate-limit manual probes to prevent worker capacity exhaustion / DoS
+        from django.core.cache import cache
+        lock_key = f"manual_probe_lock_{monitor.id}"
+        if not cache.add(lock_key, "locked", timeout=5):
+            return Response(
+                {"detail": "Manual health check in progress or cooldown active. Please wait 5 seconds before retrying."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS
+            )
 
         check_result = execute_health_check(monitor, is_manual=True)
 
@@ -156,12 +169,26 @@ class WebMonitorCreateView(View):
         name = request.POST.get('name', '').strip()
         target_url = request.POST.get('target_url', '').strip()
         http_method = request.POST.get('http_method', 'GET').upper()
-        check_interval = int(request.POST.get('check_interval', 60))
-        request_timeout = int(request.POST.get('request_timeout', 10))
+
+        try:
+            check_interval = int(request.POST.get('check_interval', 60))
+            request_timeout = int(request.POST.get('request_timeout', 10))
+            latency_warning = int(request.POST.get('latency_warning_threshold', 500))
+            latency_failure = int(request.POST.get('latency_failure_threshold', 2000))
+        except (ValueError, TypeError):
+            messages.error(request, "Invalid numeric input provided for intervals or thresholds.")
+            return render(request, 'dashboard/monitor_create.html', {'post': request.POST})
+
         expected_status_codes = request.POST.get('expected_status_codes', '200-299').strip()
-        latency_warning = int(request.POST.get('latency_warning_threshold', 500))
-        latency_failure = int(request.POST.get('latency_failure_threshold', 2000))
         request_body = request.POST.get('request_body', '').strip()
+
+        if check_interval < 10 or check_interval > 86400:
+            messages.error(request, "Check interval must be between 10 and 86400 seconds.")
+            return render(request, 'dashboard/monitor_create.html', {'post': request.POST})
+
+        if request_timeout < 1 or request_timeout > 60:
+            messages.error(request, "Request timeout must be between 1 and 60 seconds.")
+            return render(request, 'dashboard/monitor_create.html', {'post': request.POST})
 
         try:
             from checks.ssrf import validate_url_syntax

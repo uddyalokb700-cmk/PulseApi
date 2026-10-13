@@ -35,9 +35,11 @@ class AlertEventListAPIView(generics.ListAPIView):
 
 
 class AlertEventResolveAPIView(APIView):
+    serializer_class = AlertEventSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     @extend_schema(
+        request=None,
         summary="Acknowledge and resolve an active alert event",
         responses={200: AlertEventSerializer}
     )
@@ -117,6 +119,22 @@ class WebSettingsView(View):
         if not target:
             messages.error(request, "Target recipient address or URL cannot be empty.")
             return redirect('settings_view')
+
+        if channel == NotificationConfig.CHANNEL_WEBHOOK:
+            from checks.ssrf import validate_url_syntax, SSRFSecurityError
+            try:
+                validate_url_syntax(target)
+            except SSRFSecurityError as e:
+                messages.error(request, f"Invalid or unsafe webhook URL: {e}")
+                return redirect('settings_view')
+        elif channel == NotificationConfig.CHANNEL_EMAIL:
+            from django.core.validators import validate_email
+            from django.core.exceptions import ValidationError
+            try:
+                validate_email(target)
+            except ValidationError:
+                messages.error(request, "Invalid recipient email address.")
+                return redirect('settings_view')
 
         NotificationConfig.objects.create(
             owner=request.user,

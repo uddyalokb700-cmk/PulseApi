@@ -60,6 +60,9 @@ class WebLoginView(View):
         if user is not None:
             login(request, user)
             next_url = request.GET.get('next') or request.POST.get('next') or 'overview'
+            from django.utils.http import url_has_allowed_host_and_scheme
+            if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+                next_url = 'overview'
             return redirect(next_url)
         else:
             messages.error(request, "Invalid username or password.")
@@ -119,9 +122,11 @@ class LoginAPIView(APIView):
 
 
 class LogoutAPIView(APIView):
+    serializer_class = None
     permission_classes = [permissions.IsAuthenticated]
 
     @extend_schema(
+        request=None,
         responses={200: OpenApiResponse(description="Logged out successfully")},
         summary="Log out active session"
     )
@@ -131,6 +136,7 @@ class LogoutAPIView(APIView):
 
 
 class UserMeAPIView(APIView):
+    serializer_class = UserSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     @extend_schema(
